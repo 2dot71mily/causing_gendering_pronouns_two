@@ -30,7 +30,7 @@ METADATA_COLS = ['none', 'subreddit'] if DATASET is "reddit" else [
 P_DATASET = PERCENT_DATASET if not TEST_RUN else "na"
 
 
-MODEL_CHECKPOINT = 'bert-base-uncased'
+BASE_MODEL_CHECKPOINT = 'bert-base-uncased'
 EPS = 1e-5  # to avoid /0 errors
 
 # Tokenizer and labeling consts
@@ -253,13 +253,14 @@ def get_class_true_positives(predictions, labels, class_type):
 
 if __name__ == "__main__":
     tokenizer = AutoTokenizer.from_pretrained(
-        MODEL_CHECKPOINT, add_prefix_space=True)
-    # get gendered_token_ids
+        BASE_MODEL_CHECKPOINT, add_prefix_space=True)
+
+    # Get gendered_token_ids
     male_gendered_token_ids, female_gendered_token_ids = get_gendered_token_ids(
         tokenizer)
 
-    dataset = None
-    # tokenized_dataset = None
+    base_dataset = None
+    base_model = None
     for var in METADATA_COLS:
         run_name = f'cond_ft_{var}_on_{DATASET}__prcnt_{P_DATASET}__test_run_{TEST_RUN}'
         wandb.init(project=f"cond_ft_{DATASET}", config={
@@ -267,14 +268,14 @@ if __name__ == "__main__":
 
         try: 
             tokenized_dataset = load_dataset(run_name)
-        except:
-            if dataset is None:
+        except: # `tokenized_dataset` for this `run_name` variant not loaded from remotely
+            if base_dataset is None:
                 if TEST_RUN:
-                    dataset = load_dataset(DATASET, split='train[:100]')
+                    base_dataset = load_dataset(DATASET, split='train[:100]')
                 elif P_DATASET != 100:
-                    dataset = load_dataset(DATASET, split=f'train[:{P_DATASET}%]')
+                    base_dataset = load_dataset(DATASET, split=f'train[:{P_DATASET}%]')
                 else:
-                    dataset = load_dataset(DATASET)
+                    base_dataset = load_dataset(DATASET)
 
             tok_kwargs = {
                 "tokenizer": tokenizer,
@@ -283,20 +284,26 @@ if __name__ == "__main__":
                 'text_marker': '-rrb-' if USE_WIKIBIO else None,
                 'meta_col': 'input_text' if USE_WIKIBIO else None,
             }
-            tokenized_dataset = dataset.map(
+            tokenized_dataset = base_dataset.map(
                 tokenize_and_append_metadata, batched=True, fn_kwargs=tok_kwargs,
-                remove_columns=dataset.column_names
+                remove_columns=base_dataset.column_names
             )
-            # TODO: load this if exists! # EMILY
-            tokenized_dataset.save_to_disk(
-                str(PurePath(DATASETS_OUTPUT_DIR, run_name)))
+            # # TODO: load this if exists! # EMILY
+            # tokenized_dataset.save_to_disk(
+            #     str(PurePath(DATASETS_OUTPUT_DIR, run_name)))
             tokenized_dataset.push_to_hub(run_name)
                                 
 
-        # initialize base model and tokenizer
-        base_model = AutoModelForTokenClassification.from_pretrained(
-            MODEL_CHECKPOINT)
+        # Initialize base model and save weights locally to reduced repeated downloads
+        # Or doesnt HF caching take care of this?...
+        try:  
+            base_model = AutoModelForTokenClassification.from_pretrained(
+            str(PurePath(DATASETS_OUTPUT_DIR, BASE_MODEL_CHECKPOINT)))
+        except: # `BASE_MODEL_CHECKPOINT` not loaded locally.
+            base_model = AutoModelForTokenClassification.from_pretrained(
+                BASE_MODEL_CHECKPOINT)
 
+        # Split processed dataset, as needed
         val_set_name = 'val'
         if (TEST_RUN or P_DATASET != 100) or not USE_WIKIBIO:
             # Then we are not using dataset maintainer's pre-defined splits, or no split provided
@@ -304,6 +311,7 @@ if __name__ == "__main__":
                 seed=42).train_test_split(test_size=0.05)
             val_set_name = 'test'
 
+        # Train time!
         args = TrainingArguments(
             str(PurePath(MODELS_OUTPUT_DIR, run_name)),
             evaluation_strategy="epoch",
@@ -333,4 +341,4 @@ if __name__ == "__main__":
 
         base_model.push_to_hub(run_name)
         tokenizer.push_to_hub(run_name)
-        tokenized_dataset = None  # ready for next iteration
+        # base_model = None  # ready for next iteration
