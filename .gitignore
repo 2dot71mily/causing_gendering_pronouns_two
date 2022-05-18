@@ -1,5 +1,4 @@
 datasets/*
 models/*
-models_why/*
 wandb/*
 venv_cgp2/*

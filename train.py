@@ -17,32 +17,27 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # Consts for users to adjust
 TEST_RUN = True  # For end to end test on tiny dataset, till overfitting
 PERCENT_DATASET = 100  # Reduce for normal training run with smaller dataset portion
-USE_WIKIBIO = False  # False if using 'reddit' dataset.
+USE_WIKIBIO = True  # False if using 'reddit' dataset.
 MODELS_OUTPUT_DIR = 'models'
 DATASETS_OUTPUT_DIR = 'datasets'
-
+HF_USERNAME = 'emilylearning'
 
 # Consts that result from above choices
 DATASET = 'wiki_bio' if USE_WIKIBIO else 'reddit'
-N_EPOCHS = 1 if not TEST_RUN else 2  # 00 #EMILY
-METADATA_COLS = ['none', 'subreddit'] if DATASET is "reddit" else [
-    'none', 'birth_date']
+N_EPOCHS = 1 if not TEST_RUN else 200
+METADATA_COLS = ['none', 'birth_date'] if USE_WIKIBIO else [
+    'none', 'subreddit']
 P_DATASET = PERCENT_DATASET if not TEST_RUN else "na"
 
-
+# Modeling and tokenizer consts
 BASE_MODEL_CHECKPOINT = 'bert-base-uncased'
 EPS = 1e-5  # to avoid /0 errors
-
-# Tokenizer and labeling consts
 MULTITOKEN_WOMAN_WORD = 'policewoman'
 MULTITOKEN_MAN_WORD = 'spiderman'
 NON_LOSS_TOKEN_ID = -100
-NON_GENDERED_TOKEN_ID = 30  # Picked an int that will pop out visually
-
-# Picked an int that will pop out visually
-LABEL_DICT = {'female': 9, 'male': -9}
+NON_GENDERED_TOKEN_ID = 30  # Picked ints that visually pop out
+LABEL_DICT = {'female': 9, 'male': -9}  # Picked ints that visually pop out
 CLASSES = list(LABEL_DICT.keys())
-
 MAX_TOKEN_LENGTH = 128
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -137,7 +132,7 @@ def tokenize_and_append_metadata(batch, tokenizer, text_col, conditioning_key, t
 
             texts.append(f'{meta_data} {text}')
 
-    else:  # for DATASET == REDDIT_DATASET:
+    else:  # for reddit:
         for i, text in enumerate(batch[text_col]):
             if conditioning_key != 'none':
                 text = f"reddit: {batch[conditioning_key][i]}, {text}"
@@ -266,14 +261,19 @@ if __name__ == "__main__":
         wandb.init(project=f"cond_ft_{DATASET}", config={
             "run_name": run_name}, reinit=True)
 
-        try: 
-            tokenized_dataset = load_dataset(run_name)
-        except: # `tokenized_dataset` for this `run_name` variant not loaded from remotely
+        # Get processed tokenized_dataset save remotely
+        # !!!This is broken until a dataset script is added!!!
+        try:
+            tokenized_dataset = load_dataset(
+                f"{HF_USERNAME}/{run_name}")  # TODO add version
+        except:  # TODO except on actual error
+            # `tokenized_dataset` for this `run_name` variant not loaded from remotely
             if base_dataset is None:
                 if TEST_RUN:
                     base_dataset = load_dataset(DATASET, split='train[:100]')
                 elif P_DATASET != 100:
-                    base_dataset = load_dataset(DATASET, split=f'train[:{P_DATASET}%]')
+                    base_dataset = load_dataset(
+                        DATASET, split=f'train[:{P_DATASET}%]')
                 else:
                     base_dataset = load_dataset(DATASET)
 
@@ -288,20 +288,11 @@ if __name__ == "__main__":
                 tokenize_and_append_metadata, batched=True, fn_kwargs=tok_kwargs,
                 remove_columns=base_dataset.column_names
             )
-            # # TODO: load this if exists! # EMILY
-            # tokenized_dataset.save_to_disk(
-            #     str(PurePath(DATASETS_OUTPUT_DIR, run_name)))
             tokenized_dataset.push_to_hub(run_name)
-                                
 
-        # Initialize base model and save weights locally to reduced repeated downloads
-        # Or doesnt HF caching take care of this?...
-        try:  
-            base_model = AutoModelForTokenClassification.from_pretrained(
-            str(PurePath(DATASETS_OUTPUT_DIR, BASE_MODEL_CHECKPOINT)))
-        except: # `BASE_MODEL_CHECKPOINT` not loaded locally.
-            base_model = AutoModelForTokenClassification.from_pretrained(
-                BASE_MODEL_CHECKPOINT)
+        # Initialize base model
+        base_model = AutoModelForTokenClassification.from_pretrained(
+            BASE_MODEL_CHECKPOINT)
 
         # Split processed dataset, as needed
         val_set_name = 'val'
@@ -341,4 +332,3 @@ if __name__ == "__main__":
 
         base_model.push_to_hub(run_name)
         tokenizer.push_to_hub(run_name)
-        # base_model = None  # ready for next iteration
