@@ -8,7 +8,7 @@ source venv_cgp2/bin/activate
 apt-get install git-lfs // for linux or see below for other platforms
 pip install --upgrade pip
 pip install -r requirements.txt
-huggingface-cli login  # paste in your hf write token at prompt
+huggingface-cli login  // paste in your hf write token at prompt
 ```
 
 ### Installing git-lfs on other platforms
@@ -41,7 +41,7 @@ Once things look ok, set `TEST_RUN = False`, and play with the other constants a
 
 # Check out the results
 
-This this WIP Hugging Face Space, [causing_gender_pronouns_two](https://huggingface.co/spaces/emilylearning/causing_gender_pronouns_two) to experiment with the outcomes of the models trained here.
+Check out this WIP Hugging Face Space, [causing_gender_pronouns_two](https://huggingface.co/spaces/emilylearning/causing_gender_pronouns_two) to experiment with the outcomes of the models trained here.
 
 Or check out this older and less expressive Hugging Face Space [causing_gender_pronouns](https://huggingface.co/spaces/emilylearning/causing_gender_pronouns) for more documentation details.
 
